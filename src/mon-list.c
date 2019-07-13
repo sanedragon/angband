@@ -188,15 +188,31 @@ void monster_list_collect(monster_list_t *list)
 		 */
 		los = projectable(cave, player->grid, mon->grid, PROJECT_NONE);
 		field = (los) ? MONSTER_LIST_SECTION_LOS : MONSTER_LIST_SECTION_ESP;
-		entry->count[field]++;
 
 		if (mon->m_timed[MON_TMD_SLEEP] > 0)
 			entry->asleep[field]++;
 
-		/* Store the location offset from the player; this is only used for
-		 * monster counts of 1 */
-		entry->dx[field] = mon->grid.x - player->grid.x;
-		entry->dy[field] = mon->grid.y - player->grid.y;
+		/* Store the closest location offset from the player */
+		const int dx = mon->grid.x - player->grid.x;
+		const int dy = mon->grid.y - player->grid.y;
+
+		/* if a new entry, just set the location */
+		if (entry->count[field] == 0) {
+			entry->dx[field] = dx;
+			entry->dy[field] = dy;
+		} else {
+			/* Use the closest monster */
+			const int distance = dx > dy ? dx : dy;
+			const int old_distance =
+					entry->dx[field] > entry->dy[field] ? entry->dx[field]
+														: entry->dy[field];
+
+			if (distance < old_distance) {
+				entry->dx[field] = dx;
+				entry->dy[field] = dy;
+			}
+		}
+		entry->count[field]++;
 	}
 
 	/* Collect totals for easier calculations of the list. */
@@ -222,23 +238,67 @@ void monster_list_collect(monster_list_t *list)
 }
 
 /**
- * Standard comparison function for the monster list: sort by depth and then
- * power.
+ * Standard comparison function for the monster list:
+ * Sort by distance, then by level.
  */
 int monster_list_standard_compare(const void *a, const void *b)
 {
-	const struct monster_race *ar = ((monster_list_entry_t *)a)->race;
-	const struct monster_race *br = ((monster_list_entry_t *)b)->race;
+	const monster_list_entry_t *ea = (monster_list_entry_t *) a;
+	const monster_list_entry_t *eb = (monster_list_entry_t *) b;
 
-	/* If this happens, something might be wrong in the collect function. */
-	if (ar == NULL || br == NULL)
-		return 1;
+	int a_dx, a_dy, b_dx, b_dy;
 
-	/* Check depth first.*/
-	if (ar->level > br->level)
+	/* This is a bit of a hack to avoid a refactor of the entries into separate
+	 * LOS and ESP lists. If an entry has any monsters in LOS, use the LOS
+	 * distance. Otherwise, use ESP distance. */
+	if (ea->count[MONSTER_LIST_SECTION_LOS] > 0) {
+		a_dx = abs(ea->dx[MONSTER_LIST_SECTION_LOS]);
+		a_dy = abs(ea->dy[MONSTER_LIST_SECTION_LOS]);
+	} else {
+		a_dx = abs(ea->dx[MONSTER_LIST_SECTION_ESP]);
+		a_dy = abs(ea->dy[MONSTER_LIST_SECTION_ESP]);
+	}
+
+	if (eb->count[MONSTER_LIST_SECTION_LOS] > 0) {
+		b_dx = abs(eb->dx[MONSTER_LIST_SECTION_LOS]);
+		b_dy = abs(eb->dy[MONSTER_LIST_SECTION_LOS]);
+	} else {
+		b_dx = abs(eb->dx[MONSTER_LIST_SECTION_ESP]);
+		b_dy = abs(eb->dy[MONSTER_LIST_SECTION_ESP]);
+	}
+
+	/* distance is the number of moves (including diagonals) it would take to
+	 * get to that grid, equal to the larger of the two diff coordinates
+	 * minor is the other diff coordinate, likely we will encounter the
+	 * monster with a smealler value first given tunnels in cardinal directions
+	 */
+
+	const int a_distance = a_dx > a_dy ? a_dx : a_dy;
+	const int a_minor = a_dx > a_dy ? a_dy : a_dx;
+	const int b_distance = b_dx > b_dy ? b_dx : b_dy;
+	const int b_minor = b_dx > b_dy ? b_dy : b_dx;
+
+	if (a_distance < b_distance)
 		return -1;
 
-	if (ar->level < br->level)
+	if (b_distance < a_distance)
+		return 1;
+
+	if (a_minor < b_minor)
+		return -1;
+
+	if (b_minor < a_minor)
+		return 1;
+
+	/* If this happens, something might be wrong in the collect function. */
+	if (ea->race == NULL || eb->race == NULL)
+		return 0;
+
+	/* If they are the same distance, order by monster level */
+	if (ea->race->level > eb->race->level)
+		return -1;
+
+	if (ea->race->level < eb->race->level)
 		return 1;
 
 	return 0;

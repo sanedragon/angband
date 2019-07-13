@@ -25,6 +25,76 @@
 #include "ui-output.h"
 #include "ui-prefs.h"
 #include "ui-term.h"
+#include "game-input.h"
+
+
+/*
+ * Format a location as a distance and direction, e.g. "   35 SSE"
+ */
+void format_location(char *result, size_t result_size, s16b dx, s16b dy) {
+	/* distance is the number of moves ignoring walls */
+	s16b distance = abs(dx) > abs(dy) ? abs(dx) : abs(dy);
+	char *direction;
+
+	/* The dividing line between N and NNW is at 11.25 degrees.
+	 * 1/sin(11.25 degrees) ~= 5
+	 * so, longer one is 5 or more times larger than the shorter
+	 */
+	if (dy == 0 || abs(dx) / abs(dy) >= 5) {
+		if (dx < 0) {
+			direction = "W";
+		} else {
+			direction = "E";
+		}
+	} else if (dy < 0) {
+		if (dx == 0 || (abs(dy) / abs(dx)) >= 5) {
+			direction = "N";
+		} else if (dx < 0) {
+			/* The dividing line between NNW and NW is at 33.75 degrees
+			 * 1/sin(33.75 degrees) ~= 1.8
+			 * if the longer one is 1.8 or more times greater, NNW and not NW.
+			 */
+			if (10 * abs(dy) / abs(dx) >= 18) {
+				direction = "NNW";
+			} else if (10 * abs(dx) / abs(dy) >= 18) {
+				direction = "WNW";
+			} else {
+				direction = "NW";
+			}
+		} else {
+			if (10 * abs(dy) / abs(dx) >= 18) {
+				direction = "NNE";
+			} else if (10 * abs(dx) / abs(dy) >= 18) {
+				direction = "ENE";
+			} else {
+				direction = "NE";
+			}
+		}
+	} else {
+		if (dx == 0 || (abs(dy) / abs(dx)) >= 5) {
+			direction = "S";
+		} else if (dx < 0) {
+			if (10 * abs(dy) / abs(dx) >= 18) {
+				direction = "SSW";
+			} else if (10 * abs(dx) / abs(dy) >= 18) {
+				direction = "WSW";
+			} else {
+				direction = "SW";
+			}
+		} else {
+			if (10 * abs(dy) / abs(dx) >= 18) {
+				direction = "SSE";
+			} else if (10 * abs(dx) / abs(dy) >= 18) {
+				direction = "ESE";
+			} else {
+				direction = "SE";
+			}
+		}
+	}
+
+	strnfmt(result, result_size, "%5d %-3s", distance, direction);
+}
+
 
 /**
  * Format a section of the monster list: a header followed by monster list
@@ -64,6 +134,9 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 	const char *others = (show_others) ? "other " : "";
 	size_t max_line_length = 0;
 
+	/* 10 for location, 3 for offscreen flag, 5 for level, 2 for monster char, 2 for good measure */
+	const size_t metadata_length = 10 + 3 + 5 + 2 + 2;
+
 	if (list == NULL || list->entries == NULL)
 		return;
 
@@ -97,6 +170,8 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 	for (index = 0; index < total && line_count < lines_to_display; index++) {
 		char asleep[20] = { '\0' };
 		char location[20] = { '\0' };
+		char mon_level[10] = {'\0'};
+
 		byte line_attr;
 		size_t full_width;
 		size_t name_width;
@@ -108,20 +183,13 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 		if (list->entries[index].count[section] == 0)
 			continue;
 
-		/* Only display directions for the case of a single monster. */
-		if (list->entries[index].count[section] == 1) {
-			const char *direction1 =
-				(list->entries[index].dy[section] <= 0)	? "N" : "S";
-			const char *direction2 =
-				(list->entries[index].dx[section] <= 0) ? "W" : "E";
-			strnfmt(location, sizeof(location), " %d %s %d %s",
-					abs(list->entries[index].dy[section]), direction1,
-					abs(list->entries[index].dx[section]), direction2);
-		}
+		/* The location is for the closest monster if there are several */
+		format_location(location, sizeof(location),
+						list->entries[index].dx[section],
+						list->entries[index].dy[section]);
 
-		/* Get width available for monster name and sleep tag: 2 for char and
-		 * space; location includes padding; last -1 for some reason? */
-		full_width = max_width - 2 - utf8_strlen(location) - 1;
+		/* Get width available for monster name and sleep tag */
+		full_width = max_width - metadata_length;
 
 		asleep_in_section = list->entries[index].asleep[section];
 		count_in_section = list->entries[index].count[section];
@@ -130,6 +198,9 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 			strnfmt(asleep, sizeof(asleep), " (%d asleep)", asleep_in_section);
 		else if (asleep_in_section == 1 && count_in_section == 1)
 			strnfmt(asleep, sizeof(asleep), " (asleep)");
+
+		strnfmt(mon_level, sizeof(mon_level), "L%d",
+				list->entries[index].race->level);
 
 		/* Clip the monster name to fit, and append the sleep tag. */
 		name_width = MIN(full_width - utf8_strlen(asleep), sizeof(line_buffer));
@@ -140,9 +211,10 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 		my_strcat(line_buffer, asleep, sizeof(line_buffer));
 
 		/* Calculate the width of the line for dynamic sizing; use a fixed max
-		 * width for location and monster char. */
+		 * width for location and monster char. 10 for location, 3 for offscreen
+		 * flag, 5 for level, 2 for monster char*/
 		max_line_length = MAX(max_line_length,
-							  utf8_strlen(line_buffer) + 12 + 2);
+							  utf8_strlen(line_buffer) + metadata_length);
 
 		/* textblock_append_pict will safely add the monster symbol,
 		 * regardless of ASCII/graphics mode. */
@@ -159,9 +231,9 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 			 * into one displayed character. */
 			full_width += strlen(line_buffer) - utf8_strlen(line_buffer);
 			line_attr = monster_list_entry_line_color(&list->entries[index]);
-			textblock_append_c(tb, line_attr, "%-*s%s\n",
+			textblock_append_c(tb, line_attr, "%-*s%s %-4s\n",
 							   full_width,
-							   line_buffer, location);
+							   line_buffer, location, mon_level);
 		}
 
 		line_count++;
