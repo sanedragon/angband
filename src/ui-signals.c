@@ -208,8 +208,11 @@ static void handle_signal_abort(int sig)
 	/* Flush output */
 	Term_fresh();
 
+	char message[40];
+	snprintf(message, sizeof(message), "caught signal %d", sig);
+
 	/* Quit */
-	quit("software bug");
+	quit(message);
 }
 
 
