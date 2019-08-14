@@ -1001,11 +1001,14 @@ void textui_process_click(ui_event e)
 	/* XXX show context menu here */
 	if (loc_eq(player->grid, loc(x, y))) {
 		if (e.mouse.mods & KC_MOD_SHIFT) {
-			/* shift-click - cast magic */
 			if (e.mouse.button == 1) {
-				cmdq_push(CMD_CAST);
+				if (square_object(cave, loc(x, y))) {
+					cmdq_push(CMD_PICKUP);
+				} else {
+					cmdq_push(CMD_HOLD);
+				}
 			} else if (e.mouse.button == 2) {
-				Term_keypress('i',0);
+				cmdq_push(CMD_REST);
 			}
 		} else if (e.mouse.mods & KC_MOD_CONTROL) {
 			/* ctrl-click - use feature / use inventory item */
@@ -1019,17 +1022,17 @@ void textui_process_click(ui_event e)
 				cmdq_push(CMD_USE);
 			}
 		} else if (e.mouse.mods & KC_MOD_ALT) {
-			/* alt-click - show char screen */
-			/* XXX call a platform specific hook */
+
+			/* shift-click - cast magic */
 			if (e.mouse.button == 1) {
-				Term_keypress('C',0);
+				cmdq_push(CMD_CAST);
+			} else if (e.mouse.button == 2) {
+				Term_keypress('i',0);
 			}
 		} else {
 			if (e.mouse.button == 1) {
-				if (square_object(cave, loc(x, y))) {
-					cmdq_push(CMD_PICKUP);
-				} else {
-					cmdq_push(CMD_HOLD);
+				if (target_set_interactive(TARGET_LOOK, x, y)) {
+					msg("Target Selected.");
 				}
 			} else if (e.mouse.button == 2) {
 				/* Show a context menu */
@@ -1037,7 +1040,7 @@ void textui_process_click(ui_event e)
 			}
 		}
 	} else if (e.mouse.button == 1) {
-		if (player->timed[TMD_CONFUSED]) {
+		if (player->timed[TMD_CONFUSED] && e.mouse.mods) {
 			cmdq_push(CMD_WALK);
 		} else {
 			if (e.mouse.mods & KC_MOD_SHIFT) {
@@ -1051,21 +1054,10 @@ void textui_process_click(ui_event e)
 				cmd_set_arg_direction(cmdq_peek(), "direction",
 									  motion_dir(player->grid, loc(x, y)));
 			} else if (e.mouse.mods & KC_MOD_ALT) {
-				/* alt-click - look */
+			} else {
+				/* click - look */
 				if (target_set_interactive(TARGET_LOOK, x, y)) {
 					msg("Target Selected.");
-				}
-			} else {
-				/* Pathfind does not work well on trap detection borders,
-				 * so if the click is next to the player, force a walk step */
-				if ((y - player->grid.y >= -1) && (y - player->grid.y <= 1)	&&
-					(x - player->grid.x >= -1) && (x - player->grid.x <= 1)) {
-					cmdq_push(CMD_WALK);
-					cmd_set_arg_direction(cmdq_peek(), "direction",
-										  motion_dir(player->grid, loc(x, y)));
-				} else {
-					cmdq_push(CMD_PATHFIND);
-					cmd_set_arg_point(cmdq_peek(), "point", y, x);
 				}
 			}
 		}
