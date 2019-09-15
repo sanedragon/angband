@@ -112,6 +112,7 @@
 #include <X11/keysym.h>
 #include <X11/keysymdef.h>
 #include <X11/XKBlib.h>
+#include <png.h>
 
 #include "main.h"
 
@@ -1540,7 +1541,108 @@ static errr Infofnt_text_non(int x, int y, const wchar_t *str, int len)
 	return (0);
 }
 
+#if 0
+int read_png_file(char* file_name) {
+	png_structp png_ptr;
+	png_infop info_ptr;
+	png_bytep *row_pointers;
+	png_byte color_type;
+	png_byte bit_depth;
+	int number_of_passes;
+	int width, height;
+	int x,y;
+	bool update;
 
+	char header[8];    // 8 is the maximum size that can be checked
+
+	/* open file and test for it being a png */
+	FILE *fp = fopen(file_name, "rb");
+	if (!fp)
+		quit("[read_png_file] File could not be opened for reading");
+
+	fread(header, 1, 8, fp);
+	if (png_sig_cmp(header, 0, 8))
+		quit("[read_png_file] File is not recognized as a PNG file");
+
+
+	/* initialize stuff */
+	png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+
+	if (!png_ptr)
+	        quit("[read_png_file] png_create_read_struct failed");
+
+	info_ptr = png_create_info_struct(png_ptr);
+	if (!info_ptr)
+	        quit("[read_png_file] png_create_info_struct failed");
+
+	if (setjmp(png_jmpbuf(png_ptr)))
+	        quit("[read_png_file] Error during init_io");
+
+	png_init_io(png_ptr, fp);
+	png_set_sig_bytes(png_ptr, 8);
+
+	png_read_info(png_ptr, info_ptr);
+
+	width = png_get_image_width(png_ptr, info_ptr);
+	height = png_get_image_height(png_ptr, info_ptr);
+	color_type = png_get_color_type(png_ptr, info_ptr);
+	bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+
+	png_set_interlace_handling(png_ptr);
+	png_read_update_info(png_ptr, info_ptr);
+
+	if (color_type == PNG_COLOR_TYPE_PALETTE)
+	{
+		png_set_palette_to_rgb(png_ptr);
+		update = true;
+	}
+
+	if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
+	{
+		png_set_tRNS_to_alpha(png_ptr);
+		update = true;
+	}
+
+	if (bit_depth == 16)
+	{
+		png_set_strip_16(png_ptr);
+		update = true;
+	}
+
+	if (color_type == PNG_COLOR_TYPE_GRAY ||
+		color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
+		png_set_gray_to_rgb(png_ptr);
+		update = true;
+	}
+
+	if (update) {
+		png_read_update_info(png_ptr, info_ptr);
+		color_type = png_get_color_type(png_ptr, info_ptr);
+		bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+	}
+
+	if (update) {
+		png_read_update_info(png_ptr, info_ptr);
+		color_type = png_get_color_type(png_ptr, info_ptr);
+		bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+	}
+
+	png_set_bgr(png_ptr);
+	/* after these requests, the data should always be RGB or ARGB */
+
+	/* read file */
+	if (setjmp(png_jmpbuf(png_ptr)))
+	        quit("[read_png_file] Error during read_image");
+
+	row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * height);
+	for (y=0; y<height; y++)
+	        row_pointers[y] = (png_byte*) malloc(png_get_rowbytes(png_ptr,info_ptr));
+
+	png_read_image(png_ptr, row_pointers);
+
+	fclose(fp);
+}
+#endif
 
 /*************************************************************************/
 
