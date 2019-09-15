@@ -1407,10 +1407,27 @@ static void build_store(struct chunk *c, int n, struct loc grid)
 	int feat;
 	struct loc door;
 
-	/* Determine door location */
-	door.y = rand_range(grid.y - 1, grid.y + 1);
-	door.x = grid.y == door.y ? grid.x - 1 + 2 * randint0(2) :
-		rand_range(grid.x - 1, grid.x + 1);
+	/* Occasionally place a door on side */
+	if(randint0(4) == 0) {
+		door.y = grid.y;
+
+		/* On the edge of town, doors face the center */
+		if(grid.x < z_info->town_wid / 3) {
+			door.x = grid.x + 1;
+		} else if (grid.x > z_info->town_wid * 2 / 3) {
+			door.x = grid.x - 1;
+		} else {
+			door.x = grid.x - 1 + 2 * randint0(2);
+		}
+	} else {
+		/* Stores on north side get doors on south and vice versa */
+		if(grid.y < z_info->town_hgt / 2) {
+			door.y = grid.y + 1;
+		} else {
+			door.y = grid.y - 1;
+		}
+		door.x = rand_range(grid.x - 1, grid.x + 1);
+	}
 
 	/* Build an invulnerable rectangular building */
 	fill_rectangle(c, grid.y - 1, grid.x - 1, grid.y + 1, grid.x + 1, FEAT_PERM, SQUARE_NONE);
@@ -1470,6 +1487,10 @@ static void town_gen_layout(struct chunk *c, struct player *p)
 	/* Clear previous contents, add down stairs */
 	square_set_feat(c, pgrid, FEAT_MORE);
 
+	/* Clear a path from the stairs to the center of town */
+	draw_rectangle(c, pgrid.y + 1, pgrid.x - 1, z_info->town_hgt / 2, pgrid.x + 1,
+			FEAT_FLOOR, SQUARE_NONE);
+
 	/* Place stores */
 	for (n = 0; n < MAX_STORES; n++) {
 		bool enough_space = false;
@@ -1478,8 +1499,32 @@ static void town_gen_layout(struct chunk *c, struct player *p)
 		/* Find an empty place */
 		while (!enough_space) {
 			bool found_non_floor = false;
-			find_empty_range(c, &grid, loc(3, 3),
-							 loc(z_info->town_wid - 3, z_info->town_hgt - 3));
+
+			int min_x, max_x, min_y, max_y;
+
+			/* Build anywhere not on the very edge in the east-west axis */
+			min_x = 3;
+			max_x = z_info->town_wid - 3;
+
+			/* decide which side of the east-west main street to build on */
+			if(randint0(100) < 50) {
+				/* north side */
+				/* leave a path between stairs and main street */
+				if(randint0(100) < 50) {
+					max_x = pgrid.x - 2;
+				} else {
+					min_x = pgrid.x + 2;
+				}
+				max_y = (z_info->town_hgt / 2) - 2;
+				min_y = max_y - z_info->town_hgt / 4;
+			} else {
+				min_y = (z_info->town_hgt / 2) + 2;
+				max_y = min_y + z_info->town_hgt / 4;
+			}
+
+			find_empty_range(c, &grid, loc(min_x, min_y), loc(max_x, max_y));
+
+			/* check for floor in a 5x5 area centered on grid */
 			for (y = grid.y - 2; y <= grid.y + 2; y++)
 				for (x = grid.x - 2; x <= grid.x + 2; x++)
 					if (!square_isfloor(c, loc(x, y)))
@@ -1496,12 +1541,30 @@ static void town_gen_layout(struct chunk *c, struct player *p)
 	for (n = 0; n < num_rubble; n++) {
 		bool enough_space = false;
 		int x, y;
+		int min_x, max_x, min_y, max_y;
 
 		/* Find an empty place */
 		while (!enough_space) {
 			bool found_non_floor = false;
-			find_empty_range(c, &grid, loc(3, 3),
-							 loc(z_info->town_wid - 3, z_info->town_hgt - 3));
+
+			min_x = 3;
+			max_x = z_info->town_wid - 3;
+
+			/* Avoid placing rubble on street or stair path */
+			if(randint0(100) < 50) {
+				if(randint0(100) < 50) {
+					max_x = pgrid.x - 2;
+				} else {
+					min_x = pgrid.x + 2;
+				}
+				max_y = (z_info->town_hgt / 2) - 2;
+				min_y = 3;
+			} else {
+				min_y = (z_info->town_hgt / 2) + 2;
+				max_y = z_info->town_hgt - 3;
+			}
+			find_empty_range(c, &grid, loc(min_x, min_y), loc(max_x, max_y));
+
 			for (y = grid.y - 2; y <= grid.y + 2; y++)
 				for (x = grid.x - 2; x <= grid.x + 2; x++)
 					if (!square_isfloor(c, loc(x, y)))
