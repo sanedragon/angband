@@ -1897,7 +1897,7 @@ static errr CheckEvent(bool wait)
 			else if (xev->xbutton.button == Button5) z = 5;
 			else z = 0;
 
-			/* See ui-term/Term_mousepress for the decoding of this */
+			/* Save a byte in ui-term/Term_mousepress for some reason */
 			u32b state = ((XButtonEvent*) xev)->state;
 			if(state & ShiftMask) {
 				z |= (KC_MOD_SHIFT << 4);
