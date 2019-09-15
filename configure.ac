@@ -266,10 +266,12 @@ if test "$enable_x11" = "yes"; then
 		with_x11=no
 	else
 		AC_DEFINE(USE_X11, 1, [Define to 1 if using the X11 frontend and X11 libraries are found.])
-		CFLAGS="$CFLAGS $X_CFLAGS"
-		LIBS="${LIBS} ${X_PRE_LIBS} ${X_LIBS} -lX11 ${X_EXTRA_LIBS}"
-		MAINFILES="${MAINFILES} \$(X11MAINFILES)"
-		with_x11=yes
+		AC_CHECK_LIB([png], [png_create_read_struct], [with_x11=yes], [with_x11=no])
+		if test "$with_x11" = "yes"; then
+            CFLAGS="$CFLAGS $X_CFLAGS"
+            LIBS="${LIBS} ${X_PRE_LIBS} ${X_LIBS} -lpng -lX11 ${X_EXTRA_LIBS}"
+            MAINFILES="${MAINFILES} \$(X11MAINFILES)"
+        fi
 	fi
 fi
 
